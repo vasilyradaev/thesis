@@ -1,0 +1,367 @@
+---
+title: "simple"
+output: html_document
+---
+
+
+Оценка маргинального распределения приростов курса
+```{r, warning=TRUE}
+library(readxl)
+library(fitdistrplus)
+
+data_to_r <- read_excel("C:/Users/RFA/Desktop/data to r.xlsx")
+View(data_to_r)
+#данные по разнице курсов
+gr_q<-data_to_r$gr_q
+gr_q<-gr_q[!is.na(gr_q)]
+gr_q<-100*gr_q
+#данные по спрэду ставок
+gr_s<-data_to_r$gr_s
+gr_s<-gr_s[!is.na(gr_s)]
+gr_s<-100*gr_s
+
+
+plotdist(gr_q,histo=TRUE,demp=TRUE, xlab="прирост курса")
+#распределение (почти)симметричное, похоже на нормальное, но с большим эксцессом
+descdist(gr_q,boot=1000)
+#коэффициент эксцесса действительно более высок,чем в стандартном нормальном распределении, коэффициент ассиметрии близок к нулю (небольшой скос влево)
+
+#fitting via max like
+QlogMLE<-fitdist(gr_q,"logis",method="mle")
+plot(QlogMLE)
+QlogMLE_fixScale<-fitdist(gr_q,"logis",method="mle", fix.arg = list(scale=0.34))
+QnormMLE<-fitdist(gr_q,"norm",method="mle")
+plot(QnormMLE)
+#сравним оцененные логис и норм распределения с эмпир распределением
+par(mfrow = c(2,2))
+plot.legend<-c("Logistic","Normal","LogisticFix")
+denscomp(list(QlogMLE,QnormMLE,QlogMLE_fixScale), legendtext = plot.legend, demp=TRUE)
+qqcomp(list(QlogMLE,QnormMLE,QlogMLE_fixScale), legendtext = plot.legend)
+cdfcomp(list(QlogMLE,QnormMLE,QlogMLE_fixScale), legendtext = plot.legend)
+ppcomp(list(QlogMLE,QnormMLE,QlogMLE_fixScale), legendtext = plot.legend)
+#логист распределение лучше моделирует хвосты и вероятности (что важно в дальнейшем для моделирования копулы), но хуже моделирует эксцесс (островершинность) распределения. фикс логистик кажется лучше всех
+
+#далее можно сравнить модели по качеству подгонки и выбрать лучшую на основе инф критериев
+QgofstatsMLE<-gofstat(list(QlogMLE,QlogMLE_fixScale,QnormMLE),fitnames = c("logis","logis_fix","norm"))
+print(QgofstatsMLE)
+#нам нужны самые маленькие значения статистик, так как в этом случае пи-вэлью будет большим и нулевая гипотеза о принадлежности к данному параметрическому распределению не будет отвергаться.
+#по всем тестам качества подгонки, а также по всем инф критериям лучшей является логист распределение без фикс параметра
+
+
+#fitting via moments
+QlogMME<-fitdist(gr_q,"logis",method="mme")
+QnormMME<-fitdist(gr_q,"norm",method="mme")
+#
+#сравним кумулятивные функции
+plot1.legend<-c("logis MLE","logis fix MLE" ,"logis MME", "norm MLE","norm MME")
+cdfcomp(list(QlogMLE, QlogMLE_fixScale, QlogMME,QnormMLE,QnormMME),
+        legendtext = plot1.legend,
+        main = "cdf comparison",
+        xlogscale = FALSE, datapch = 20)
+
+#лучше всех MLE logis. Далее сравним функции плотности
+
+denscomp(list(QlogMLE,QlogMLE_fixScale, QlogMME,QnormMLE,QnormMME), demp = TRUE,addlegend=TRUE,
+         legendtext = plot1.legend,
+         main="pdf comparison")
+#лучше всех MLE logis
+
+Qgofstats_All<-gofstat(list(QlogMLE,QlogMLE_fixScale,QlogMME,QnormMLE,QnormMME),fitnames = c("logis MLE","logis_fix","logis MME", "norMLE","normMME"))
+Qgofstats_All
+##По критериям согласия и инф лучшей признается модель логистического распр на макс. лайк методе 
+
+```
+Оценка маргинального распределения приростов спреда ставок
+
+
+```{r, warning=TRUE}
+plotdist(gr_s,histo=TRUE,demp=TRUE)
+descdist(gr_s,boot=1000)
+#оценки логистического распределения разными методами
+SlogMLE<-fitdist(gr_s,"logis",method="mle")
+plot(SlogMLE)
+SlogMME<-fitdist(gr_s,"logis",method="mme")
+plot(SlogMME)
+SlogMGE<-fitdist(gr_s,"logis",method="mge",gof="AD")
+SgofStatLogi<-gofstat(list(SlogMLE,SlogMME,SlogMGE),fitnames = c(" lMLE"," lMME","lMGE"))
+SgofStatLogi
+#сравним на графиках mle,mme и mge
+par(mfrow = c(2,2))
+plot.legendSl<-c("lMLE","lMME","lMGE")
+denscomp(list(SlogMLE,SlogMME,SlogMGE), legendtext = plot.legendSl, demp=TRUE)
+qqcomp(list(SlogMLE,SlogMME,SlogMGE), legendtext = plot.legendSl)
+cdfcomp(list(SlogMLE,SlogMME,SlogMGE), legendtext = plot.legendSl)
+ppcomp(list(SlogMLE,SlogMME,SlogMGE), legendtext = plot.legendSl)
+
+#сравним по критериям согласия и инф критериям
+SgofStatLogi<-gofstat(list(SlogMLE,SlogMME,SlogMGE),fitnames = c(" lMLE"," lMME","lMGE"))
+SgofStatLogi
+
+#выбор между mle и mge,далее норм распр
+
+SnormMLE<-fitdist(gr_s,"norm",method="mle")
+plot(SnormMLE)
+SnormMME<-fitdist(gr_s,"norm",method="mme")
+plot(SnormMME)
+SnormMGE<-fitdist(gr_s,"norm","mge",gof="AD")
+#графики
+par(mfrow = c(2,2))
+plot.legendSn<-c("nMLE","nMME","nMGE")
+denscomp(list(SnormMLE,SnormMME,SnormMGE), legendtext = plot.legendSn, demp=TRUE)
+qqcomp(list(SnormMLE,SnormMME,SnormMGE), legendtext = plot.legendSn)
+cdfcomp(list(SnormMLE,SnormMME,SnormMGE), legendtext = plot.legendSn)
+ppcomp(list(SnormMLE,SnormMME,SnormMGE), legendtext = plot.legendSn)
+#mle лучше рабоатет с хвостами, mge с остальным
+#сравним все модели по критериям
+SgofStatAll<-gofstat(list(SlogMLE,SlogMME,SlogMGE,SnormMLE,SnormMME,SnormMGE),fitnames = c(" lMLE"," lMME","lMGE","nMLE","nMME","nMGE"))
+SgofStatAll
+#лучшие модели остались те же: логистическая mle (по инф критериям) и логистическая mge (по критериям согласия), выбираем mge, она ближе к эмпирической cdf, это представляется наиболее важным
+```
+Мы параметрически оценили одномерные функции распределения, оба распределения принадлежат логистическому распределению
+далее сформируем реализацию оцененных наблюдений в пространстве вероятностей для оценки копула-функции 
+
+```{r, warning=TRUE}
+library(VineCopula)
+locq<-QlogMLE$estimate[1]
+scq<-QlogMLE$estimate[2]
+u1<-plogis(gr_q,location = locq,scale=scq)
+
+locs<-SlogMGE$estimate[1]
+scs<-SlogMGE$estimate[2]
+u2<-plogis(gr_s,location = locs,scale=scs)
+#график реализации оцененных фукций распределения на основе эмпирических данных
+plot(u1,u2,main="Диаграмма рассеяния",xlab="u1",ylab="u2",col="blue")
+#тест на независимость полученных величин
+BiCopIndTest(u1,u2)
+#пивелью нулевое, нулевая гипотеза о независимости отвергается
+```
+Оценим основные виды параметрических копула-функций, чтобы в дальнейшем выбрать лучшую на основе критериев согласия и инфр критериев
+```{r, warning=TRUE}
+fgm<-fgmCopula(dim=2)
+Gauss<-normalCopula(dim=2)
+St<-tCopula(dim=2)
+Fr<-frankCopula(dim=2)
+Gu<-gumbelCopula(dim=2)
+Cl<-claytonCopula(dim=2)
+
+#Значение N далее отвечает за кол-во процедур бустрап оценивания. оно должно значительно превышать кол-во исходных наблюдений, однако для этого необходимы высокие вычислительные мощности. будем считать, что хватит 2000 итераций (5000 для fgm копулы)
+#копула фарли-гумбеля-моргенштерна
+fitFGM<-fitCopula(fgm,cbind(u1,u2),method ="ml",optim.method="Brent")
+parFGM = fitFGM@estimate
+fgmstat<-gofCopula(fgmCopula(dim=2), cbind(u1,u2), optim.method="Brent", method="Sn",estim.method = "itau", simulation = "pb", N=5000, ties = TRUE)
+confint(fitFGM)
+#гаусс
+fitGauss<-fitCopula(Gauss,cbind(u1,u2), method="ml")
+parGauss<-fitGauss@estimate
+Gaussstat<-gofCopula(normalCopula(dim=2), cbind(u1,u2),method="Sn", estim.method = "itau", simulation = "pb", N=2000, ties = TRUE)
+confint(fitGauss)
+#стьюдент
+fitSt<-fitCopula(St,cbind(u1,u2),method ="ml")
+parSt<-fitSt@estimate
+Ststat<-gofCopula(tCopula(dim=2,df=4, df.fixed=TRUE), cbind(u1,u2), method="Sn",  estim.method = "itau", simulation = "pb", N=2000)
+confint(fitSt)
+#франк
+fitFR<-fitCopula(Fr,cbind(u1,u2),method ="ml")
+parFR<-fitFR@estimate
+Frstat<-gofCopula(frankCopula(dim=2), cbind(u1,u2),method="Sn", estim.method = "itau", simulation = "pb", N=2000, ties = TRUE)
+confint(fitFR)
+#гумбель
+fitGU<-fitCopula(Gu,cbind(u1,u2),method ="ml")
+parGU<-fitGU@estimate
+#Исходя из оцененного значения параметра равного 1, данный вид оценивает product копулу, отвечающую случаю независимости, далее его не рассматриваем (это неудивительно, так как переменные u1 и u2 характеризуются отрицательной зависимостью, которая не моделируется данным семейством функций)
+
+#клейтон
+fitCL<-fitCopula(Cl,cbind(u1,u2),method ="ml",optim.method="Brent")
+parCL<-fitCL@estimate
+Clstat<-gofCopula(claytonCopula(dim=2), cbind(u1,u2),method="SnC", estim.method = "itau", simulation = "pb", N=2000, ties = TRUE)
+confint(fitCL)
+#Так как же и копула Гумбеля критерий согласия указывает на незначимость коэффициента копулы Клейтона, что подтверждает наличие предполагаемой отрицательной связи между u1 и u2 (данное семейство копул не подходит для моделирования отрицательной зависимости)
+
+#сравним итоговые пивелью для критериев согласия. они должны быть как минимум больше 0.1, чтобы не отвергать нулевую гипотезу, которая в данном случае заключается в принадлежности к заданому типу параметрического распределения
+c(fgmstat$p.value,Gaussstat$p.value,Ststat$p.value,Frstat$p.value)
+#Сравним по инфр критерию акаике
+AIC(fitFGM,fitGauss,fitSt,fitFR)
+
+#на основе критериев согласия (значения пи велью для используемых тестов) лучшей является копула франка, также неплохой результат у fgm копулы. Эти же виды копул являются наиболее успешными с точки зрения инфр критериев. в дальнейшем будем рассматривать данные два типа копула функций.(у распределения стьюдента также подходящее значение пивэлью, но для его необходимо заранее установить число степеней свободы и следовательно оценить несколько моделей для разного числа степеней свободы, поэтому возможно отказаться от данного типа функций в пользу более успешных моделей;доверительный интервал для оценки степеней свободы функцией fitCopula содержит отрицательные значения, чтои уже говорит не в его пользу)
+
+#построим графики плоности выбранных копул
+persp(fgmCopula(dim=2,param=parFGM), dCopula, main ="плотность ФГМ")
+persp(frankCopula(dim=2,param=parFR), dCopula, main ="плотность Франка")
+#у копулы франка более тяжелые хвосты
+#графики распределения
+persp(fgmCopula(dim=2,param=parFGM), pCopula, main ="fgm cdf")
+persp(frankCopula(dim=2,param=parFR), pCopula, main ="frank cdf")
+#у копулы франка более тяжелые хвосты
+```
+Сравним графически исходные наблюдения и смоделированные из оцененных копул. сравним также критерии зависимости (корреляцию, ро и тау)
+
+```{r, warning=TRUE}
+#сравним распределения вероятностей в пространстве [0,1] смоделированные на основе оцененных копул и полученные на основе оцененных маргинальных распределений
+#fgm копула
+plot(u1,u2,main="Исходные/Сгенерированные наблюдения(FGM): BLUE/RED",xlab="u1",ylab="u2",col="blue")
+simPrFGM<-rCopula(1033,fgmCopula(parFGM,dim=2))
+points(simPrFGM[,1],simPrFGM[,2],col="red")
+#отрицательная зависимость имеющаяся в исходных данных видна и для смоделированных данных
+
+#копула франка
+plot(u1,u2,main="Исходные/Сгенерированные наблюдения(FGM): BLUE/RED",xlab="u1",ylab="u2",col="blue")
+simPrFR<-rCopula(1033,frankCopula(parFR,dim=2))
+points(simPrFGM[,1],simPrFGM[,2],col="red")
+#здесь также имеется отриц зависимость.
+
+#теперь смодулируем двумерное распределение на основе оценненных маргиналов и копул/fgm
+FGMDistr<-mvdc(fgmCopula(dim=2,param=parFGM),margins = c("logis","logis"),paramMargins = list(list(location = locq,scale=scq),list(location = locs,scale=scs)))
+simObsFGM<-rMvdc(1033,FGMDistr)
+#frank
+FRDistr<-mvdc(frankCopula(dim=2,param=parFR),margins = c("logis","logis"),paramMargins = list(list(location = locq,scale=scq),list(location = locs,scale=scs)))
+simObsFR<-rMvdc(1033,FRDistr)
+#сравним на основе различных мер зависимости/меры зависимости исходных данных
+EMPro<-cor(gr_q,gr_s,method="spearman")
+EMPtau<-cor(gr_q,gr_s,method="kendall")
+EMPkor<-cor(gr_q,gr_s)
+EMPlinkstats<-c(EMPro,EMPtau,EMPkor)
+#меры зависимости симулирванных данных на основе fgm копулы
+FGMro<-cor(simObsFGM,method="spearman")
+FGMtau<-cor(simObsFGM,method="kendall")
+FGMkor<-cor(simObsFGM)
+FGMlinkstats<-c(FGMro[2,1],FGMtau[2,1],FGMkor[2,1])
+#меры зависимости симулирванных данных на основе копулы франка
+FRro<-cor(simObsFR,method="spearman")
+FRtau<-cor(simObsFR,method="kendall")
+FRkor<-cor(simObsFR)
+FRlinkstats<-c(FRro[2,1],FRtau[2,1],FRkor[2,1])
+linkComparison<-cbind(EMPlinkstats,FGMlinkstats,FRlinkstats)
+linkComparison
+
+#симулированные данные из распределения на основе копулы франка показывают почти такие же результаты (с точнойстью до 3 знака) в терминах мер зависимости спирмана и кендала, что и оценка на основе исходных данных. Результаты для fgm распределения хуже, но модель имеет правильную спецификацию, так как порядок мер зависимости не сильно отличается. Ни одна параметризация не воспроизводит с точностью простой коэффициент корреляции.
+
+#сравним на графиках распределения
+plot(gr_q, gr_s, main = 'прирост курсов/разностей ставок (ФГМ копула)', col = "blue")
+points(simObsFGM[,1], simObsFGM[,2], col = 'red')
+legend('bottomright', c('исходые', 'смоделированные'), col = c('blue', 'red'), pch=21)
+
+plot(gr_q, gr_s, main = 'прирост курсов/разностей ставок (копула Франка)', col = "blue")
+points(simObsFR[,1], simObsFR[,2], col = 'red')
+legend('bottomright', c('исходые', 'смоделированные'), col = c('blue', 'red'), pch=21)
+#облака точек смоделированные из обеих оцененных функций распределения практически повторяют исходные данные (за исключением некоторых выбросов)
+
+#плотность, кумулятивная функция для франка
+persp(FRDistr, dMvdc, xlim = c(-3, 3), ylim=c(-22, 22), main = "функция плотности(копула Франка)")
+persp(FRDistr, pMvdc, xlim = c(-3, 3), ylim=c(-22, 22), main = "функция распределения (копула Франка)")
+#плотность, кумулятивная для fgm
+persp(FGMDistr, dMvdc, xlim = c(-3, 3), ylim=c(-22, 22), main = "функция плотности(ФГМ копула)")
+persp(FGMDistr, pMvdc, xlim = c(-3, 3), ylim=c(-22, 22), main = "функция распределения (ФГМ копула)")
+```
+
+
+
+```{r, warning=TRUE}
+library(zoo)
+library(cubature)
+library(fitdistrplus)
+library(copula)
+#ширина окна?   120 вариант 130 тоже 270 prik
+win<-130
+
+location1<-function(x) c(fitdist(x,"logis",method="mle")$estimate[1])
+scale1<-function(x) c(fitdist(x,"logis",method="mle")$estimate[2])
+location2<-function(x) c(fitdist(x,"logis",method="mge")$estimate[1])
+scale2<-function(x) c(fitdist(x,"logis",method="mge")$estimate[2])
+
+x.date<-seq(as.Date("2013/1/1"), by = "day", length.out = length(gr_q))
+kursseries<-zoo(matrix(gr_q, ncol=1),x.date)
+stavkiseries<-zoo(matrix(gr_s, ncol=1),x.date)
+                  
+#Коэффициенты первого распределения
+Mar1Location<-coredata(rollapply(kursseries,width=win, location1, align=c("right"),coredata = TRUE))
+Mar1Scale<-coredata(rollapply(kursseries,width=win, scale1, align=c("right"),coredata = TRUE))
+#Коэффициенты второго распределения  
+Mar2Location<-coredata(rollapply(stavkiseries,width=win, location2, align=c("right"),coredata = TRUE))
+Mar2Scale<-coredata(rollapply(stavkiseries,width=win, scale2, align=c("right"),coredata = TRUE))
+
+#матрица для хранилища реализаций одномерных функций с окном win
+MatOfProbsU1<-array(dim=c(win,1,length(gr_q)-win+1))
+for (k in 1:c(length(gr_q)-win+1)) {
+  MatOfProbsU1[,,k]<-cbind(plogis(gr_q[k:c(k+win-1)],location=Mar1Location[k],scale=Mar1Scale[k]))
+}
+
+MatOfProbsU2<-array(dim=c(win,1,length(gr_q)-win+1))
+for (k in 1:c(length(gr_q)-win+1)) {
+  MatOfProbsU2[,,k]<-cbind(plogis(gr_s[k:c(k+win-1)],location=Mar2Location[k],scale=Mar2Scale[k]))
+}
+#в этой матрице коэффициенты копулы франка
+FrankCoef<-array(dim=c(length(gr_q)-win+1,1))
+ for (k in 1:c(length(gr_q)-win+1)) {
+   FrankCoef[k,]<-fitCopula(Fr,cbind(MatOfProbsU1[,,k],MatOfProbsU2[,,k]),method="ml")@estimate
+ }                      
+
+
+#условная плотность, умноженная на икс
+Nconddensity_x<-function(x,loc,sc,u,v,p) x*(exp((-(x-loc))/sc))/(sc*(1+exp((-(x-loc))/sc))^2)*((-p*(exp(-p)-1)*exp(-p*(u+v)))/((exp(-p*u)-1*(exp(-p*v)-1))+exp(-p)-1)^2)
+#вектор для хранения результата
+Cond_Exp<-array(dim=c(length(gr_q)-win,1)) 
+#условное мат ожидание
+for (k in 2:c(length(gr_q)-win+1)) {
+  Cond_Exp[c(k-1),]<-hcubature(Nconddensity_x, lowerLimit = min(gr_q[c(k-1):c(k+win-2)]), upperLimit = max(gr_q[c(k-1):c(k+win-2)]), loc = Mar1Location[c(k-1)], sc = Mar1Scale[c(k-1)],u = MatOfProbsU1[c(k-1)], v = MatOfProbsU2[c(k-1)], p = FrankCoef[c(k-1)])$integral
+}
+
+#просто торговое правило (мат ож>0 - купили, в другом случае продали (оно там е равно нулю, поэтому это отдельно можно не прописывать))
+Port<-array(dim=c(length(gr_q)-win,1))
+for (k in 1:c(length(gr_q)-win)) {
+  if(Cond_Exp[k]>0) {
+    Port[k]<-c(gr_q[k+win])
+  } else {
+    Port[k]<-c(-gr_q[k+win])
+}
+}
+
+#сумма приростов, которые получились по модели
+str<-sum(Port)    
+#суммы рыночных приростов
+market<-sum(gr_q[c(win+1):c(length(gr_q))])       
+#графики..
+graphic<- function(x) sum(Port[1:c(x)])
+graphicM<- function(x) 0+sum(gr_q[c(win+1):c(x+win)])
+t<-cbind(1:c(length(gr_q)-win))
+
+Model<-sapply(t,graphic,simplify="array")
+Market<-sapply(t,graphicM, simplify="array")
+par(mfrow = c(1,2))
+plot(Model,type="l")
+plot(Market, type="l")
+
+
+#торговое правило с тэйк профитом/стоп лосом
+Open<-quotes_to_r$Open
+Close<-quotes_to_r$Close
+High<-quotes_to_r$High
+Low<-quotes_to_r$Low
+
+
+
+Stdev<-coredata(rollapply(kursseries,width=win, sd, align=c("right"),coredata = TRUE))
+
+Port2<-array(dim=c(length(gr_q)-win,1))
+for (k in 1:c(length(gr_q)-win)){
+  if ((Cond_Exp[k]>0)&((100*(High[c(k+win)]-Close[c(k+win-1)])/Close[c(k+win-1)])>Stdev[k])) {
+    Port2[k]<-c(Stdev[k])
+  }
+  if ((Cond_Exp[k]>0)&((100*(High[c(k+win)]-Close[c(k+win-1)])/Close[c(k+win-1)])<Stdev[k])){
+    Port2[k]<-(gr_q[k+win]) 
+    }
+  if ((Cond_Exp[k]<0)&(abs((100*(Low[c(k+win)]-Close[c(k+win-1)])/Close[c(k+win-1)]))>Stdev[k])){
+    Port2[k]<-c(Stdev[k])
+  }
+  if ((Cond_Exp[k]<0)&(abs((100*(Low[c(k+win)]-Close[c(k+win-1)])/Close[c(k+win-1)]))<Stdev[k])){
+    Port2[k]<-c(-gr_q[k+win])
+}}
+graphic1<- function(x) sum(Port2[1:c(x)])
+Model1<-sapply(t,graphic1,simplify="array")
+
+
+
+```
+
+
+
+
